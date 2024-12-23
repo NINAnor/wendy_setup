@@ -10,11 +10,23 @@
 mod_manage_study_ui <- function(id){
   ns <- NS(id)
   tagList(
-    h5("Enter the study id you want to modify"),
-    br(),
-    textInput(ns("site_id"),""),
-    actionButton(ns("check_study"),"check status"),
-    uiOutput(ns("cond_b1"))
+    bslib::value_box(
+      title="",
+      value = "",
+      h5("Here you can check the status of an ongoing study or modify the status of a study"),
+      br(),
+      h4("To change the status of a study, each landscape value (total of 10) must be mapped at least by two individual participants."),
+      br(),
+      h5("Enter your study id that you want to check or modify"),
+      br(),
+      textInput(ns("site_id"),""),
+      actionButton(ns("check_study"),"check status"),
+      showcase = bs_icon("book"),
+      theme = value_box_theme(bg = blue, fg = "black")
+    ),
+
+    uiOutput(ns("cond_b1")),
+    uiOutput(ns("process_fin"))
 
   )
 }
@@ -27,7 +39,7 @@ mod_manage_study_server <- function(id){
     ns <- session$ns
 
     sites<-eventReactive(input$check_study,{
-      shinybusy::show_modal_spinner(text = "fetch site status")
+      shinybusy::show_modal_spinner(text = "fetch site status", color = "green")
       sites<-tbl(con_admin, "study_site")
       sites<-sites%>%collect()
       shinybusy::remove_modal_spinner()
@@ -54,14 +66,20 @@ mod_manage_study_server <- function(id){
     map_stats<-eventReactive(input$check_study,{
       sitestatus<-sitestatus()
       a<-as.character(input$site_id)
-      if(sitestatus == 1 | sitestatus == 3){
+      if(sitestatus == 1){
 
-        shinybusy::show_modal_spinner(text = "fetch map stats")
+        shinybusy::show_modal_spinner(text = "calculate round I statistics", color = "green")
         map_stats<-tbl(con_admin, "es_mappingR1")
         map_stats<-map_stats%>%filter(siteID == a & poss_mapping == TRUE)%>%
           group_by(esID)%>%summarise(n_maps = n_distinct(userID))%>%collect()
         shinybusy::remove_modal_spinner()
 
+      }else if(sitestatus == 3){
+        shinybusy::show_modal_spinner(text = "calculate round II statistics", color = "green")
+        map_stats<-tbl(con_admin, "es_mappingR2")
+        map_stats<-map_stats%>%filter(siteID == a & poss_mapping == TRUE)%>%
+          group_by(esID)%>%summarise(n_maps = n_distinct(userID))%>%collect()
+        shinybusy::remove_modal_spinner()
       }else{
         map_stats<-NULL
       }
@@ -75,78 +93,188 @@ mod_manage_study_server <- function(id){
       req(map_stats)
       sitestatus<-sitestatus()
       map_stats<-map_stats()
-      # removeUI(selector = "#site_id")
-      # removeUI(selector = "#check_study")
-      output$cond_b1<-renderUI({
-        ui=tagList(
-          tableOutput(ns('status_r1')),
-          uiOutput(ns("cond_b2"))
-        )
-      })
-
       if(sitestatus == 1){
+        output$status_r1 <- renderDT({
+          map_stats$Status <- ifelse(map_stats$n_maps < 2,
+                              "<span style='color:red;'>&#10060;</span>",  # Red cross
+                              "<span style='color:green;'>&#9989;</span>") # Green checkmark
 
-        output$status_r1 <- renderTable({as.data.frame(map_stats)})
-        print(min(map_stats$n_maps))
-        print(nrow(map_stats))
-
+          datatable(map_stats, escape = FALSE, rownames = FALSE, options = list(pageLength = 10))
+          })
 
           if(min(map_stats$n_maps)<2){
             if(nrow(map_stats != 10)){
-              outputcond_b2<-renderUI({h4("To close session I, some ecosystem services are missing and need to be mapped.")})
-            }else{
-              outputcond_b2<-renderUI({h4("To close session I there need to be more results for some ecosystem services")})
-            }
+              output$cond_b1<-renderUI({
+                ui=tagList(
+                  br(),
+                  bslib::value_box(
+                    title="",
+                    value = "",
+                    h4("The selected study is open in the first mapping round"),
+                    showcase = bs_icon("1-circle"),
+                    theme = value_box_theme(bg = "white", fg = "black")
+                  ),
+                  DTOutput(ns('status_r1')),
+                  br(),
+                  bslib::value_box(
+                    title="",
+                    value = "",
+                    h4("To close round I, each landscape value must have at least two maps. In addition some landscape values are missing."),
+                    h4("Either you remind participants to map or you should invite more participants."),
+                    showcase = bs_icon("exclamation-octagon-fill"),
+                    theme = value_box_theme(bg = orange, fg = "black")
+                  ),
+                )
+              })
 
+            }else{
+              output$cond_b1<-renderUI({
+                ui=tagList(
+                  br(),
+                  bslib::value_box(
+                    title="",
+                    value = "",
+                    h4("The selected study is open in the first mapping round"),
+                    showcase = bs_icon("1-circle"),
+                    theme = value_box_theme(bg = "white", fg = "black")
+                  ),
+                  DTOutput(ns('status_r1')),
+                  br(),
+                  bslib::value_box(
+                    title="",
+                    value = "",
+                    h4("To close round I, each landscape value must have at least two maps."),
+                    h4("Either you remind participants to map or you should invite more participants."),
+                    showcase = bs_icon("exclamation-octagon-fill"),
+                    theme = value_box_theme(bg = orange, fg = "black")
+                  ),
+                )
+              })
+            }
+          ## only valid condition if status == 1
           }else if(min(map_stats$n_maps)>2 & nrow(map_stats == 10)){
-            outputcond_b2<-renderUI({tagList(
-              h5("If you want, you can now close session I"),
-              actionButton(ns("close1"),"close session I"),
-              uiOutput(ns("fin_process1"))
-            )})
+            output$cond_b1<-renderUI({
+              ui=tagList(
+                br(),
+                bslib::value_box(
+                  title="",
+                  value = "",
+                  h4("The selected study is open in the first mapping round"),
+                  showcase = bs_icon("1-circle"),
+                  theme = value_box_theme(bg = "white", fg = "black")
+                ),
+                br(),
+                bslib::value_box(
+                  title="",
+                  value = "",
+                  h4("If you want, you can close mapping round I"),
+                  actionButton(ns("close1"),"close session I"),
+                  #uiOutput(ns("fin_process1")),
+                  showcase = bs_icon("exclamation-octagon-fill"),
+                  theme = value_box_theme(bg = green, fg = "black")
+                ),
+              )
+            })
+
           }else if(min(map_stats$n_maps)>2 & nrow(map_stats != 10)){
-            outputcond_b2<-renderUI({h4("To close session I there need to be more results for some ecosystem services")})
+            output$cond_b1<-renderUI({
+              ui=tagList(
+                br(),
+                bslib::value_box(
+                  title="",
+                  value = "",
+                  h4("The selected study is open in the first mapping round"),
+                  showcase = bs_icon("1-circle"),
+                  theme = value_box_theme(bg = "white", fg = "black")
+                ),
+                DTOutput(ns('status_r1')),
+                br(),
+                bslib::value_box(
+                  title="",
+                  value = "",
+                  h4("Some landscape values are missing."),
+                  h4("Either you remind participants to map or you should invite more participants."),
+                  showcase = bs_icon("exclamation-octagon-fill"),
+                  theme = value_box_theme(bg = orange, fg = "black")
+                ),
+              )
+            })
           }
 
-
-
-
-
-      ## status 2
+      ## status 3 running R2
       }else if(sitestatus == 3){
-        output$cond_b1<-renderUI({
-          ui=tagList(
-            h5("Session II is running"),
-            tableOutput(ns('status_r2')),
-            uiOutput(ns("cond_b2"))
-          )
-        })
-        output$status_r2 <- renderTable({as.data.frame(map_stats)})
-        removeUI(selector = "#check_study")
+          output$status_r2 <- renderDT({
+          map_stats$Status <- ifelse(map_stats$n_maps < 2,
+                                     "<span style='color:red;'>&#10060;</span>",  # Red cross
+                                     "<span style='color:green;'>&#9989;</span>") # Green checkmark
 
-        if(min(map_stats$n_maps)<2 & nrow(map_stats != 10)){
+          datatable(map_stats, escape = FALSE, rownames = FALSE, options = list(pageLength = 10))
+        })
+
+
+        if(min(map_stats$n_maps)<2 | nrow(map_stats != 10)){
           output$cond_b1<-renderUI({
-            "To close session II, at least 2 maps for each of the 10 ecosystem services are needed"
+            ui=tagList(
+              br(),
+              bslib::value_box(
+                title="",
+                value = "",
+                h4("The selected study is open in the second mapping round"),
+                showcase = bs_icon("2-circle"),
+                theme = value_box_theme(bg = "white", fg = "black")
+              ),
+              DTOutput(ns('status_r2')),
+              br(),
+              bslib::value_box(
+                title="",
+                value = "",
+                h4("To close round II, each landscape value must have at least two maps. In addition some landscape values are missing."),
+                h4("Either you remind participants to map or you should invite more participants."),
+                showcase = bs_icon("exclamation-octagon-fill"),
+                theme = value_box_theme(bg = orange, fg = "black")
+              ),
+            )
           })
         }else{
           output$cond_b1<-renderUI({
-            tagList(
-              h5("If you want, you can now close session II"),
-              actionButton(ns("close2"),"close session II")
+            ui=tagList(
+              br(),
+              bslib::value_box(
+                title="",
+                value = "",
+                h4("The selected study is open in the second mapping round"),
+                showcase = bs_icon("2-circle"),
+                theme = value_box_theme(bg = "white", fg = "black")
+              ),
+              br(),
+              bslib::value_box(
+                title="",
+                value = "",
+                h4("If you want, you can close mapping round II"),
+                actionButton(ns("close2"),"close session I"),
+                #uiOutput(ns("fin_process1")),
+                showcase = bs_icon("exclamation-octagon-fill"),
+                theme = value_box_theme(bg = green, fg = "black")
+              ),
             )
-
           })
         }
       }else if(sitestatus == 4){
         output$cond_b1<-renderUI({
           ui=tagList(
-            h5("Session II is closed and postprocessed")
+            bslib::value_box(
+              title="",
+              value = "",
+              h4("Mapping round II is closed and you can use the maps in WENDY consite"),
+              showcase = bs_icon("exclamation-octagon-fill"),
+              theme = value_box_theme(bg = green, fg = "black")
+            )
           )
         })
       }else{
         output$cond_b1<-renderUI({
           ui=tagList(
-            h5("Invalid ID")
+            h5("Invalid study ID", style = "color: red;")
           )
         })
 
@@ -155,7 +283,8 @@ mod_manage_study_server <- function(id){
     })
 
     ### server logic for "closeR1"
-    ## AHP calculations
+    ## AHP calc individual and global order of importance in the study area.
+    ## store values of impact for disturbance pdf
     ## status of projects should be set directly to 3
     observeEvent(input$close1,{
       req(map_stats)
@@ -164,7 +293,7 @@ mod_manage_study_server <- function(id){
       map_stats<-map_stats()
       sites<-sites()
 
-      shinybusy::show_modal_spinner(text = "Close mapping session 1 & update data base")
+      shinybusy::show_modal_spinner(text = "Close mapping round I & update data base", color = "green")
 
       new_site<-sites%>%filter(siteID==input$site_id & siteSTATUS == 1)%>%
         mutate(siteSTATUS=replace(siteSTATUS, siteSTATUS==1, 3)) %>%
@@ -176,10 +305,10 @@ mod_manage_study_server <- function(id){
       es_pair <- es_pair%>%select(es_pair, ES_left,ES_right,selection_text,selection_val,userID,siteID,ahp_section) %>%filter(siteID == input$site_id)%>% collect()
       perform_ahp_update_db(es_pair = es_pair, con_admin = con_admin, studyID = input$site_id)
 
-      ### rated impacts for dist
-      es_dist <-tbl(con_admin, "es_impact")
-      es_dist<-es_dist%>%filter(siteID == input$site_id)%>% collect()
-      influence_rating_summary(es_dist = es_dist, con_admin = con_admin, studyID = input$site_id)
+      ### rated impacts for dist (not needed in pdf function included)
+      # es_dist <-tbl(con_admin, "es_impact")
+      # es_dist<-es_dist%>%filter(siteID == input$site_id)%>% collect()
+      # influence_rating_summary(es_dist = es_dist, con_admin = con_admin, studyID = input$site_id)
 
 
       site_updated = bq_table(project = "eu-wendy", dataset = dataset, table = 'study_site')
@@ -187,15 +316,20 @@ mod_manage_study_server <- function(id){
 
       shinybusy::remove_modal_spinner()
 
-      removeUI(selector = "#close1")
-      output$fin_process1<-renderUI({
+      removeUI(selector = "#cond_b1")
+      output$process_fin<-renderUI({
         tagList(
-          paste0("The site id ",input$site_id," is now open for the second mapping round.")
+          bslib::value_box(
+            title="",
+            value = "",
+            h4("Mapping round I closed"),
+            br(),
+            h4(paste0("You can send the following link to your participants: https://view.nina.no/",input$site_id,"/ to access mapping round II")),
+            showcase = bs_icon("exclamation-octagon-fill"),
+            theme = value_box_theme(bg = green, fg = "black")
+          )
         )
       })
-
-      ############# AHP calculations
-
 
     })
 
@@ -204,7 +338,7 @@ mod_manage_study_server <- function(id){
     observeEvent(input$close2,{
       sites<-sites()
 
-      shinybusy::show_modal_spinner(text = "update data base - postprocess session II")
+      shinybusy::show_modal_spinner(text = "update data base - postprocess session II", color = "green")
       new_site<-sites%>%filter(siteID==input$site_id & siteSTATUS == 3)%>%
         mutate(siteSTATUS=replace(siteSTATUS, siteSTATUS==2, 4)) %>%
         mutate(siteCREATETIME=Sys.time()) %>%
@@ -222,7 +356,7 @@ mod_manage_study_server <- function(id){
       tmp_name<-paste0(input$site_id,".tif")
       writeRaster(r, filename = tmp_name)
 
-      file_name <-paste0("99_help_rast/",input$site_id)
+      file_name <-paste0(env,"/99_help_rast/",input$site_id)
       gcs_upload(tmp_name, bucket_name, name = file_name, predefinedAcl = "bucketLevel")
       file.remove(tmp_name)
       unlink(tmp_loc,recursive = T)
@@ -230,20 +364,8 @@ mod_manage_study_server <- function(id){
 
       shinybusy::remove_modal_spinner()
 
-      ## as soon as site status == 4
-      #google cloud function:
-      # import CV R2 for the stud_ID (easy)
-      # Calc IAR for all the ES per stud_ID (easy)
-      # calc z value per ES-IAR (medium)
-
-
     })
-
-
   })
-
-
-
 }
 
 ## To be copied in the UI

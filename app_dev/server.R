@@ -1,8 +1,24 @@
+# server.R
+# Copyright (C) 2024 Reto Spielhofer; Norwegian Institute for Nature Research (NINA)
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 function(input, output, session) {
 
   hideTab(inputId = "inTabset", target = "p1")
   hideTab(inputId = "inTabset", target = "p1A")
   hideTab(inputId = "inTabset", target = "p1B")
+  hideTab(inputId = "inTabset", target = "p2")
 
 
   #check user name
@@ -13,24 +29,39 @@ function(input, output, session) {
 
   observeEvent(input$check1,{
     show_modal_spinner(
-      text = "check your access"
+      color = green,
+      text = "Check your access"
     )
     req(admins)
     admins<-admins()
     if(input$user_name %in% admins$userName){
       output$cond0<-renderUI({
-        actionButton("login","login")
+        h5("You have access to create, track or modify a WENDY study.")
+        fluidRow(
+          column(6,
+            actionButton("login","create a new study", style="color: black; background-color: #31c600; border-color: #31c600")
+
+
+          ),
+          column(6,
+            actionButton("manage","manage a study", style="color: black; background-color: #31c600; border-color: #31c600")
+
+
+          )
+        )
 
       })
       removeUI(
         selector = "#check1"
       )
       removeUI(
-        selector = "#user_name"
+        # selector = "#user_name"
+        selector = "div:has(> #user_name)"
       )
     }else{
       output$cond0<-renderUI({
-        h5("You do not have access to create a new study. Please use this form to request a user.")
+        br()
+        h5("No access - Please use this form to request a user.", style = "color: red;")
       })
     }
     remove_modal_spinner()
@@ -53,6 +84,14 @@ function(input, output, session) {
     showTab(inputId = "inTabset", target = "p1")
   })
 
+  observeEvent(input$manage,{
+    updateTabsetPanel(session, "inTabset",
+                      selected = "p2")
+    hideTab(inputId = "inTabset",
+            target = "p0")
+    showTab(inputId = "inTabset", target = "p2")
+  })
+
 
   output$cond_b1<-renderUI({
     validate(
@@ -61,7 +100,7 @@ function(input, output, session) {
       need(input$siteID != '', 'Provide a site ID (no blank spaces)')
     )
     tagList(
-      actionButton('sub1', 'confirm', class='btn-primary')
+      actionButton('sub1', 'confirm', class='btn-primary', style="color: black; background-color: #31c600; border-color: #31c600")
 
     )
 
@@ -96,7 +135,7 @@ function(input, output, session) {
           bslib::value_box(
             title="",
             value = "",
-            h4("Draw your study region as a rectangle within the maritime zones"),
+            h4("Draw your study region as a rectangle within the maritime zone"),
             br(),
             h4("Make sure that you define the study region in a way that your focus area for wind energy development is in the center and that you have approx. min of 30km between wind development area and closest study border."),
 
@@ -121,11 +160,13 @@ function(input, output, session) {
 
   observe({
     cntry_sel<-cntry_sel()
+    print(length(cntry_sel))
+    print(nrow(cntry_sel))
     if(nrow(cntry_sel==1)){
       ## render save country btn
       output$cond_cntry<-renderUI(
         tagList(
-          actionButton("save_countr","save country"),
+          actionButton("save_countr","save country", style="color: black; background-color: #31c600; border-color: #31c600"),
           uiOutput("cntry_dep")
         )
       )
@@ -133,7 +174,7 @@ function(input, output, session) {
       ## render text min  / max 1 cntry
       output$cond_cntry<-renderUI(
         tagList(
-          h5("please select a country. It is not possible to select more than one country")
+          h5("Please select only one country.")
         )
       )
     }
@@ -151,6 +192,7 @@ function(input, output, session) {
 
   sel_country<-eventReactive(input$save_countr,{
     cntry_sel<-cntry_sel()
+    cntry_sel<-cntry_sel[1,]
     sel_country<-st_sf(cntr%>%filter(CNTR_ID==cntry_sel[which(cntry_sel$selected==TRUE),"id"]))
   })
 
@@ -344,6 +386,7 @@ function(input, output, session) {
   observeEvent(input$savepoly,{
 
     show_modal_spinner(
+      color = "green",
       text = "save your study area on our servers"
     )
     updateTabsetPanel(session, "inTabset",
@@ -373,8 +416,8 @@ function(input, output, session) {
     study_area$TYPE <-as.character(input$sitetype)
     study_area$AREAkm2<-as.integer(round(as.numeric(st_area(study_area))/1000000,0))
     study_area$CREATETIME<-Sys.time()
-    study_area$CREATOR <-input$user_name
-    study_area$RESP_INSTITUT
+    study_area$siteADMIN <-input$user_name
+    study_area$RESP_INST
     study_area$LANG<-input$language
     polygons<-study_area%>%st_drop_geometry()
     polygons$geometry<-st_as_text(study_area$geometry)
